@@ -60,7 +60,7 @@ void setup() {
 
   
   // initialize Relay-Module
-  // initRelay();
+  initRelay();
 
   // initialize NeoPixel-Ring
   initLED();
@@ -71,18 +71,21 @@ void setup() {
 }
 
 void loop() {
-
+  /* print colors
     Serial.println(test, HEX);
     Serial.println(randomBegin.getValue(),HEX);
     Serial.println(randomEnd.getValue(),HEX);
     Serial.println("----");
-
+  */
+  
   runSensors();
+  setPumpsLow();
 
   if (data_touch_1 > 1500) {
     updateCurrColors();
     //Serial.println(data_touch_1);
     ledActive();
+    activatePump(1);
     delay(300);
 
     /*
@@ -102,6 +105,35 @@ void initRelay() {
   pinMode(relay_Pin_OUT_2, OUTPUT);
   pinMode(relay_Pin_OUT_3, OUTPUT);
   pinMode(relay_Pin_OUT_4, OUTPUT);
+
+  pinMode(relay_Pin_IN_1, OUTPUT);
+  pinMode(relay_Pin_IN_2, OUTPUT);
+  pinMode(relay_Pin_IN_3, OUTPUT);
+  pinMode(relay_Pin_IN_4, OUTPUT);
+}
+
+void setPumpsLow() {
+  digitalWrite(relay_Pin_IN_1, LOW);  
+  digitalWrite(relay_Pin_IN_2, LOW);  
+  digitalWrite(relay_Pin_IN_3, LOW);  
+  digitalWrite(relay_Pin_IN_4, LOW);  
+}
+
+void activatePump(int selectedPump) {
+    switch (selectedPump) {
+      case 1:
+        digitalWrite(relay_Pin_IN_1, HIGH);
+        break;
+      case 2:
+        digitalWrite(relay_Pin_IN_2, HIGH);
+        break;
+      case 3:
+        digitalWrite(relay_Pin_IN_3, HIGH);
+        break;
+      case 4:
+        digitalWrite(relay_Pin_IN_4, HIGH);
+        break;  
+    }
 }
 
 /// SENSOR Methods  –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
@@ -139,6 +171,7 @@ void ledActive() { // LED-Behaviour when sensor is touched on one side /*int tou
   //pixels.fill(0x220000,0,NUMPIXELS); // blend colors
   setMood(data_touch_1);
   pixels.fill(currMood,0,NUMPIXELS);
+  
 
   pixels.show(); 
   delay(50);
