@@ -1,21 +1,15 @@
 /// Inputs Relay
 // --- Air IN
-const int relay_Pin_IN_1 = 0;
-const int relay_Pin_IN_2 = 1;
-const int relay_Pin_IN_3 = 2;
-const int relay_Pin_IN_4 = 3;
-// -- Air OUT
-const int relay_Pin_OUT_1 = 4;
-const int relay_Pin_OUT_2 = 5;
-const int relay_Pin_OUT_3 = 6;
-const int relay_Pin_OUT_4 = 7;
+const int relay_Pin_IN_4 = 0, relay_Pin_IN_3 = 1, relay_Pin_IN_2 = 2, relay_Pin_IN_1 = 4;
+const int max_cooldowntime = 120;
+int cooldowntime[4] = {max_cooldowntime, max_cooldowntime, max_cooldowntime, max_cooldowntime};
+int activePumpTime[4] = {0, 0, 0, 0};
+const int max_activePumpTime = 30;
+bool pumpActive[4] = {false, false, false, false};
 
 /// Inputs TouchSensor
-const int touch_1 = 15;
-const int touch_2 = 16;
-const int touch_3 = 17;
-const int touch_4 = 18;
-int data_touch_1;
+const int touch_1 = 15, touch_2 = 17, touch_3 = 19, touch_4 = 22;
+int data_touch_1, data_touch_2, data_touch_3, data_touch_4;
 
 /// Inputs LEDs
 #include "Color.hpp"
@@ -24,49 +18,68 @@ const int NUMPIXELS = 12;
 const int LEDBRIGHTNESS = 10; // Set LED Brightness
 const int LED_QUARTAL = NUMPIXELS / 4;
 const float MAX_BRIGHTNESS = 200.0;
-int prev_LED_brightness[12];
-// --- LED Palette Sleeping
-//uint32_t color_sleeping_full = /*0x979AD3*/ 0x12345678 ;
-//uint32_t color_sleeping_dimmed = /*0x555555*/ 0x01020304;
-Color color_sleeping_full = Color(200,00,255,255);
-Color color_sleeping_dimmed = Color(0,56,56,0);
 
-// --- LED Palette Active
-uint32_t color_blue = 0x80C9E0;
-uint32_t color_mad = 0xFF0000;
-uint32_t color_curious = 0x00FF00;
-uint32_t currMood;
+int moods[4] = {0, 0, 0, 0}; //0: sleepting, 1: curious, 2: aggressive
+// --- LED Color Palette
+const Color color_sleeping_full = Color(200, 00, 255, 150);
+const Color color_sleeping_dimmed = Color(0, 56, 56, 50); //also used for curious
+const Color color_active_aggressive_full = Color(255, 61, 61, 255);
+const Color color_active_aggressive_dimmed = Color(227, 104, 170, 10);
+const Color color_active_curious_full = Color(184,255,228, 200);
+const Color color_singleArm = Color(200, 200, 200, 200);
+
 // --- LED Sleeping effect
-Color baseColors[NUMPIXELS]; 
+Color prevColor[4] = {color_sleeping_full, color_sleeping_full, color_sleeping_full, color_sleeping_full};
+Color nextColor[4] = {color_sleeping_full, color_sleeping_full, color_sleeping_full, color_sleeping_full};
+Color targetColor[4] = {color_sleeping_full, color_sleeping_full, color_sleeping_full, color_sleeping_full};
+Color prevColorDimmed[4] = {color_sleeping_dimmed, color_sleeping_dimmed, color_sleeping_dimmed, color_sleeping_dimmed};
+Color nextColorDimmed[4] = {color_sleeping_dimmed, color_sleeping_dimmed, color_sleeping_dimmed, color_sleeping_dimmed};
+Color targetColorDimmed[4] = {color_sleeping_dimmed, color_sleeping_dimmed, color_sleeping_dimmed, color_sleeping_dimmed};
+
+int mixerCounter[4] = {0, 0, 0, 0};
+int max_mixerCounter = 5;
+int max_moodDuration = 45;
+int curr_moodDuration[4] = {max_moodDuration, max_moodDuration, max_moodDuration, max_moodDuration};
+int max_pumpGap = 50;
+int currGap[4] = {max_pumpGap,max_pumpGap,max_pumpGap,max_pumpGap};
+Color baseColors[NUMPIXELS];
 Color blendColors[NUMPIXELS];
 Color randomBegin;
 Color randomEnd;
 uint8_t randomPhase = 0;
 uint8_t randomSpeed = 0;
-int currLedColors[NUMPIXELS];
+
+// --- Behaviour value
+const int aggressiveValue = 1000;
+const int min_curiousValue = 300, max_curiousValue = aggressiveValue;
 
 int test = 0;
+bool interaction_active = false;
+int currTouch_1 = 0, currTouch_2 = 0, currTouch_3 = 0, currTouch_4 = 0;
+uint8_t speedLedSleep = 16, speedLedAggressive = 64;
+//int counterLed = 0;
+int allowInteractionTime = 20;
+int addTouch_1, addTouch_2, addTouch_3, addTouch_4;
+int beginQuartal = 99, endQuartal = 99;
 
 
 #include <Adafruit_NeoPixel.h>
 //#ifdef __AVR__
-//#include <avr/power.h> 
+//#include <avr/power.h>
 //#endif
 Adafruit_NeoPixel pixels(NUMPIXELS, led_ring_IN, NEO_GRB + NEO_KHZ800);
 //#define DELAYVAL 100 // Time (in milliseconds) to pause between pixels
 
 /// MAIN Methods –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 void setup() {
-
-  
   // initialize Relay-Module
   initRelay();
 
   // initialize NeoPixel-Ring
   initLED();
 
-  // initialize Sensors
-  initSensors();
+  // All Graphs have the same height
+  normalizeGraph();
 
 }
 
@@ -77,198 +90,288 @@ void loop() {
     Serial.println(randomEnd.getValue(),HEX);
     Serial.println("----");
   */
-  
+
   runSensors();
-  setPumpsLow();
+  setQuartal();
+  checkPumps();
+  calcTargetColor();
+  //outputMoods();
+  
+  ledColorDisplay();
+  //counterLed++;
+  deductMoodDuration();
+  delay(50);
+}
 
-  if (data_touch_1 > 1500) {
-    updateCurrColors();
-    //Serial.println(data_touch_1);
-    ledActive();
-    activatePump(1);
-    delay(300);
+void outputMoods()
+{
+  for (int i = 0; i < 4; i++)
+  {
+    Serial.println("mood " + String(i) + ": " + String(moods[i]) + " -- prev " + String(prevColor[i].getValue()) + " - next " + String(nextColor[i].getValue()) + " - target " + String(targetColor[i].getValue()));
+  }
+}
 
-    /*
-    uint8_t R = (currLedColors[1] >> 16); // read Red-value from hex
-    uint8_t G = (currLedColors[1] >> 8); // read Green-value from hex
-    uint8_t B = (currLedColors[1]); // read Blue-value from hex
-    Serial.println("R: " + String(R) + "  G: " + String(G) + "  B: " + String(B));
-    */
-  } else {
-     ledSleeping();
+void deductMoodDuration() {
+  for (int i = 0; i<4; i++) {
+    if (curr_moodDuration[i] > 0) {
+      curr_moodDuration[i]--;
+    }
   }
 }
 
 /// RELAY Methods  –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 void initRelay() {
-  pinMode(relay_Pin_OUT_1, OUTPUT);
-  pinMode(relay_Pin_OUT_2, OUTPUT);
-  pinMode(relay_Pin_OUT_3, OUTPUT);
-  pinMode(relay_Pin_OUT_4, OUTPUT);
-
   pinMode(relay_Pin_IN_1, OUTPUT);
   pinMode(relay_Pin_IN_2, OUTPUT);
   pinMode(relay_Pin_IN_3, OUTPUT);
   pinMode(relay_Pin_IN_4, OUTPUT);
+  setPumpsHigh();
 }
 
-void setPumpsLow() {
-  digitalWrite(relay_Pin_IN_1, LOW);  
-  digitalWrite(relay_Pin_IN_2, LOW);  
-  digitalWrite(relay_Pin_IN_3, LOW);  
-  digitalWrite(relay_Pin_IN_4, LOW);  
+void setPumpsHigh() {
+  digitalWrite(relay_Pin_IN_1, HIGH);
+  digitalWrite(relay_Pin_IN_2, HIGH);
+  digitalWrite(relay_Pin_IN_3, HIGH);
+  digitalWrite(relay_Pin_IN_4, HIGH);
+}
+
+void deactivatePump (int selectedPump) {
+  switch (selectedPump) {
+    case 0:
+      digitalWrite(relay_Pin_IN_1, HIGH);
+      break;
+    case 1:
+      digitalWrite(relay_Pin_IN_2, HIGH);
+      break;
+    case 2:
+      digitalWrite(relay_Pin_IN_3, HIGH);
+      break;
+    case 3:
+      digitalWrite(relay_Pin_IN_4, HIGH);
+      break;
+  }
+  pumpActive[selectedPump] = false;
+  cooldowntime[selectedPump] = 0;
+  activePumpTime[selectedPump] = 0;
 }
 
 void activatePump(int selectedPump) {
+  //Serial.println("Requested pump: " + String(selectedPump));
+
+  if (cooldowntime[selectedPump] >= max_cooldowntime && activePumpTime[selectedPump] == 0) {
+    //Serial.println("Im hereee!");
+
     switch (selectedPump) {
+      case 0:
+        digitalWrite(relay_Pin_IN_1, LOW);
+        break;
       case 1:
-        digitalWrite(relay_Pin_IN_1, HIGH);
+        digitalWrite(relay_Pin_IN_2, LOW);
         break;
       case 2:
-        digitalWrite(relay_Pin_IN_2, HIGH);
+        digitalWrite(relay_Pin_IN_3, LOW);
         break;
       case 3:
-        digitalWrite(relay_Pin_IN_3, HIGH);
+        digitalWrite(relay_Pin_IN_4, LOW);
         break;
-      case 4:
-        digitalWrite(relay_Pin_IN_4, HIGH);
-        break;  
     }
+    pumpActive[selectedPump] = true;
+    activePumpTime[selectedPump] = 0;
+  }
+}
+
+void activateAllPumps() {
+  for (int i = 0; i <= 3; i++) {
+    activatePump(i);
+  }
+}
+
+void checkPumps() {
+  for (int i = 0; i <= 3; i++) {
+    if (pumpActive[i]) {
+      activePumpTime[i]++;
+      if (activePumpTime[i] > max_activePumpTime) {
+        deactivatePump(i);
+      }
+    } else {
+      if (cooldowntime[i] < max_cooldowntime) {
+        cooldowntime[i]++;
+      }
+    }
+  }
 }
 
 /// SENSOR Methods  –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-void initSensors() {
-  // Serial läuft schon!
-  //Serial.begin(57600); // Sensor
+void runSensors() {
+  data_touch_1 = touchRead(touch_1) + addTouch_1;
+  data_touch_2 = touchRead(touch_2) + addTouch_2;
+  data_touch_3 = touchRead(touch_3) + addTouch_3;
+  data_touch_4 = touchRead(touch_4) + addTouch_4;
+
+  Serial.print(data_touch_1);
+  Serial.print(" ");
+  Serial.print(data_touch_2);
+  Serial.print(" ");
+  Serial.print(data_touch_3);
+  Serial.print(" ");
+  Serial.println(data_touch_4);
 }
 
-void runSensors() {
+/* All capacity sensors start at the same x-value */
+void normalizeGraph () {
+  int avgTouch = 0;
   data_touch_1 = touchRead(touch_1);
-  //Serial.println(data_touch_1);
-  delay(100);  
+  data_touch_2 = touchRead(touch_2);
+  data_touch_3 = touchRead(touch_3);
+  data_touch_4 = touchRead(touch_4);
+
+  for (int i = 0; i > 5; i++) {
+    Serial.println("Initialising...");
+    avgTouch = (avgTouch + data_touch_1 + data_touch_2 + data_touch_3 + data_touch_4) / 5;
+    delay(1000);
+  }
+
+  addTouch_1 = avgTouch - data_touch_1;
+  addTouch_2 = avgTouch - data_touch_2;
+  addTouch_3 = avgTouch - data_touch_3;
+  addTouch_4 = avgTouch - data_touch_4;
+}
+
+/* if one sensor is touched slightly, the correct LEDs are set */
+void setQuartal() {
+
+  if (data_touch_1 + data_touch_2 + data_touch_3 + data_touch_4 > max_curiousValue) {
+    for (int i = 0; i < 4; i++)
+    {
+      if (moods[i] != 2 )
+      {
+        setNextColor(i, color_active_aggressive_full, color_active_aggressive_dimmed);
+        moods[i] = 2;
+        curr_moodDuration[i] = max_moodDuration;
+        activateAllPumps();
+      }
+    }
+  }
+  else
+  {
+    int data[4] = {data_touch_1, data_touch_2, data_touch_3, data_touch_4};
+    for (int i = 0; i < 4; i++)
+    {
+      if (data[i] > min_curiousValue) {
+        if (moods[i] != 1 )
+        {
+          activatePump(i);
+          
+          setNextColor(i, color_active_curious_full, color_sleeping_dimmed);
+          moods[i] = 1;
+          curr_moodDuration[i] = max_moodDuration;
+        }
+      } else {
+        if (moods[i] != 0 && curr_moodDuration[i] == 0)
+        {
+          setNextColor(i, color_sleeping_full, color_sleeping_dimmed);
+          moods[i] = 0;
+        }
+      }
+    }
+  }
+}
+
+void setNextColor(int i, Color col1, Color col2) {
+  //Serial.println("color " + String(i) + " changed to " + col1.getValue());
+  nextColor[i] = col1;
+  nextColorDimmed[i] = col2;
+  mixerCounter[i] = 0;
+}
+
+
+void calcTargetColor()
+{
+  for (int i = 0; i < 4; i++) {
+    if (mixerCounter[i] <= max_mixerCounter) {
+      uint8_t weight = 255 * (float) mixerCounter[i] /  (float) max_mixerCounter;
+      //uint8_t weight = 0x100;
+      //targetColor[i] = nextColor[i];
+      targetColor[i] = prevColor[i].mix(nextColor[i], weight);
+      //Serial.println(String(mixerCounter[i]) + " / " + String(max_mixerCounter) + " = " + String(weight));
+      targetColorDimmed[i] = prevColorDimmed[i].mix(nextColorDimmed[i], weight);
+      mixerCounter[i]++;
+    }
+    else
+    {
+      prevColor[i] = nextColor[i];
+    }
+  }
 }
 
 /// LED Methods –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-  // Reihefolge: pixels.clear() > pixels.setPixelColor(numberPixel, pixels.Color(r,g,b)) > pixels.show() > delay() falls benötigt
-  
+
 void initLED() {
-    
-  for (int i = 0; i < NUMPIXELS; i++) {
-      prev_LED_brightness[i] = 0;
-  }
   pixels.begin();
   pixels.clear();
   pixels.show();
   pixels.setBrightness(50);
 
-  setRandomBlendColors(color_sleeping_full, color_sleeping_dimmed);
+  setRandomBlendColors(color_sleeping_full, color_sleeping_dimmed, speedLedSleep);
 }
 
-void ledActive() { // LED-Behaviour when sensor is touched on one side /*int touchQuart*/
+void ledColorDisplay() {
   pixels.clear();
   pixels.show();
-  
-  //pixels.fill(0x220000,0,NUMPIXELS); // blend colors
-  setMood(data_touch_1);
-  pixels.fill(currMood,0,NUMPIXELS);
-  
 
-  pixels.show(); 
-  delay(50);
-}
+  generateNewRandomBlend();
 
-void setMood(int data_sensor) {
-  if (data_sensor > 1500 && data_sensor < 1800) {
-      currMood = color_curious;
-  } else if (data_sensor > 1800 && data_sensor < 2500) {
-      currMood = color_mad;
+  for (int i = 0; i < NUMPIXELS; i++) {
+    pixels.setPixelColor(i, blendColors[i].getValue());
   }
-}
 
-void updateCurrColors() {
-  for (int i=0; i<NUMPIXELS; i++) {
-    currLedColors[i] = pixels.getPixelColor(i);
-  }
-}
-
-void testLED() {
-  pixels.clear();
   pixels.show();
-  
-  pixels.fill(color_blue,0,NUMPIXELS);
-  pixels.show(); 
-  delay(1000);
-}
-
-void ledSleeping() { // LED-Behaviour when sensor is NOT touched
-  pixels.clear();
-  pixels.show();
-  for (int i=0; i<NUMPIXELS; i++) {
-    const Color result = baseColors[i].mix(blendColors[i], randomPhase);
-    pixels.setPixelColor(i, result.getValue());
-  }
-  pixels.show();
-
-  delay(50);
-  const uint8_t oldPhase = randomPhase;
-  randomPhase += randomSpeed;
-  if (oldPhase > randomPhase) {
-    for(uint8_t i = 0; i < NUMPIXELS; i++) {
-      baseColors[i] = blendColors [i];
-    }
-    generateNewRandomBlend(); 
-  }
-  /* easy tests
-  int i;
-  float j;
-  for (j = 1.0; j < MAX_BRIGHTNESS; j+=0.2) {
-    for (i = 0; i < 12; i++) {
-      prev_LED_brightness[i] = pixels.getPixelColor(i);
-      pixels.setPixelColor(i,j,j,j);
-    } 
-      pixels.show();
-      delay(5);
-  } */
-}
-
-void disableNeoPixels()
-{
-    for (int i = 0; i < NUMPIXELS; ++i) {
-        pixels.setPixelColor(i, 0);
-    }    
-    pixels.show();
-}
-
-void fillWithColor(const Color color)
-{
-    for (int i = 0; i < NUMPIXELS; ++i) {
-        baseColors[i] = color;
-    }
 }
 
 uint8_t getSimpleRandom()
 {
-    static uint16_t seed = 70;
-    seed = 181 * seed + 359;
-    return (uint8_t)(seed >> 8);
+  static uint16_t seed = 70;
+  seed = 181 * seed + 359;
+  return (uint8_t)(seed >> 8);
 }
 
 void generateNewRandomBlend()
 {
-    for (int i = 0; i <NUMPIXELS; ++i) {
+  for (int area = 0; area < 4; area++) {
+    for (int p = 0; p < 3; p++) {
       uint8_t weight = getSimpleRandom();
-      blendColors[i] = randomBegin.mix(randomEnd, weight);
+      weight = weight/2 + 256/4; //limit random range around center
+      //blendColors[area * 3 + p] = targetColor[area]; //nur heller Zielwert
+      //blendColors[area * 3 + p] = targetColor[area].mix(targetColorDimmed[area], weight); //Mischung aus hell und dunkel
+      blendColors[area * 3 + p] = blendColors[area * 3 + p].mix(targetColor[area].mix(targetColorDimmed[area], weight),80); //Mischung aus hell, dunkel, vorheriger wert
     }
-    randomSpeed = (getSimpleRandom() >> 3) + 5;
+  }
+  randomSpeed = (getSimpleRandom() >> 3) + 5;
 }
 
-void setRandomBlendColors(Color a, Color b)
+void setRandomBlendColors(Color a, Color b, uint8_t speedLED)
 {
-    randomBegin = a;
-    randomEnd = b;
-    randomPhase = 0;
-    randomSpeed = 16;
-    fillWithColor(Color());
-    generateNewRandomBlend(); 
-    test = a.getValue();
+  randomBegin = a;
+  randomEnd = b;
+  randomPhase = 0;
+  randomSpeed = speedLED;
+  //fillWithColor(Color());
+  generateNewRandomBlend();
+}
+
+/// Testing NeoPixel Methods –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+
+void disableNeoPixels()
+{
+  for (int i = 0; i < NUMPIXELS; ++i) {
+    pixels.setPixelColor(i, 0);
+  }
+  pixels.show();
+}
+
+void fillWithColor(const Color color)
+{
+  for (int i = 0; i < NUMPIXELS; ++i) {
+    baseColors[i] = color;
+  }
 }

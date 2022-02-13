@@ -1,10 +1,10 @@
 /// Inputs Relay
 // --- Air IN
 const int relay_Pin_IN_4 = 0, relay_Pin_IN_3 = 1, relay_Pin_IN_2 = 2, relay_Pin_IN_1 = 4;
-const int max_cooldowntime = 50;
+const int max_cooldowntime = 100;
 int cooldowntime[4] = {max_cooldowntime, max_cooldowntime, max_cooldowntime, max_cooldowntime};
 int activePumpTime[4] = {0, 0, 0, 0};
-const int max_activePumpTime = 20;
+const int max_activePumpTime = 30;
 bool pumpActive[4] = {false, false, false, false};
 
 /// Inputs TouchSensor
@@ -19,7 +19,7 @@ const int LEDBRIGHTNESS = 10; // Set LED Brightness
 const int LED_QUARTAL = NUMPIXELS / 4;
 const float MAX_BRIGHTNESS = 200.0;
 
-int moods[4] = {0, 0, 0, 0}; //0: sleepting, 1: curious, 2: agressive
+int moods[4] = {0, 0, 0, 0}; //0: sleepting, 1: curious, 2: aggressive
 // --- LED Color Palette
 const Color color_sleeping_full = Color(200, 00, 255, 150);
 const Color color_sleeping_dimmed = Color(0, 56, 56, 50); //also used for curious
@@ -38,6 +38,10 @@ Color targetColorDimmed[4] = {color_sleeping_dimmed, color_sleeping_dimmed, colo
 
 int mixerCounter[4] = {0, 0, 0, 0};
 int max_mixerCounter = 5;
+int max_moodDuration = 45;
+int curr_moodDuration[4] = {max_moodDuration, max_moodDuration, max_moodDuration, max_moodDuration};
+int max_pumpGap = 50;
+int currGap[4] = {max_pumpGap,max_pumpGap,max_pumpGap,max_pumpGap};
 Color baseColors[NUMPIXELS];
 Color blendColors[NUMPIXELS];
 Color randomBegin;
@@ -46,14 +50,14 @@ uint8_t randomPhase = 0;
 uint8_t randomSpeed = 0;
 
 // --- Behaviour value
-const int aggressiveValue = 3000;
-const int min_curiousValue = 600, max_curiousValue = aggressiveValue;
+const int aggressiveValue = 2000;
+const int min_curiousValue = 200, max_curiousValue = aggressiveValue;
 
 int test = 0;
 bool interaction_active = false;
 int currTouch_1 = 0, currTouch_2 = 0, currTouch_3 = 0, currTouch_4 = 0;
 uint8_t speedLedSleep = 16, speedLedAggressive = 64;
-int counterLed = 0;
+//int counterLed = 0;
 int allowInteractionTime = 20;
 int addTouch_1, addTouch_2, addTouch_3, addTouch_4;
 int beginQuartal = 99, endQuartal = 99;
@@ -91,32 +95,11 @@ void loop() {
   setQuartal();
   checkPumps();
   calcTargetColor();
-  outputMoods();
-
-
-  /*
-    // Aggressive Behaviour > turns red
-    //if (data_touch_1+data_touch_2+data_touch_3+data_touch_4 > aggressiveValue && counterLed > allowInteractionTime) {
-    if (data_touch_1 + data_touch_2 + data_touch_3 + data_touch_4 > aggressiveValue) {
-      setQuartal();
-      activateAllPumps();
-      setRandomBlendColors(color_active_aggressive_full, color_active_aggressive_dimmed, speedLedAggressive);
-      counterLed = 0;
-      // Curious Behaviour > turns partially white and completely green
-    } else if (((data_touch_1 < max_curiousValue && data_touch_1 > min_curiousValue) || (data_touch_2 < max_curiousValue && data_touch_2 > min_curiousValue) || (data_touch_3 < max_curiousValue && data_touch_3 > min_curiousValue) || (data_touch_4 < max_curiousValue && data_touch_4 > min_curiousValue))) {
-      setQuartal();
-      //setRandomBlendColors(color_active_curious_full, color_sleeping_dimmed, speedLedAggressive);
-      interaction_active = true;
-      counterLed = 0;
-      //Sleeping Behaviour > blue/pruple colors
-    } else {
-      setQuartal();
-      setRandomBlendColors(color_sleeping_full, color_sleeping_dimmed, speedLedSleep);
-      counterLed = 0;
-    }*/
-
+  //outputMoods();
+  
   ledColorDisplay();
-  counterLed++;
+  //counterLed++;
+  deductMoodDuration();
   delay(50);
 }
 
@@ -125,6 +108,14 @@ void outputMoods()
   for (int i = 0; i < 4; i++)
   {
     Serial.println("mood " + String(i) + ": " + String(moods[i]) + " -- prev " + String(prevColor[i].getValue()) + " - next " + String(nextColor[i].getValue()) + " - target " + String(targetColor[i].getValue()));
+  }
+}
+
+void deductMoodDuration() {
+  for (int i = 0; i<4; i++) {
+    if (curr_moodDuration[i] > 0) {
+      curr_moodDuration[i]--;
+    }
   }
 }
 
@@ -256,6 +247,7 @@ void setQuartal() {
       {
         setNextColor(i, color_active_aggressive_full, color_active_aggressive_dimmed);
         moods[i] = 2;
+        curr_moodDuration[i] = max_moodDuration;
         activateAllPumps();
       }
     }
@@ -269,11 +261,13 @@ void setQuartal() {
         if (moods[i] != 1 )
         {
           activatePump(i);
+          
           setNextColor(i, color_active_curious_full, color_sleeping_dimmed);
           moods[i] = 1;
+          curr_moodDuration[i] = max_moodDuration;
         }
       } else {
-        if (moods[i] != 0)
+        if (moods[i] != 0 && curr_moodDuration[i] == 0)
         {
           setNextColor(i, color_sleeping_full, color_sleeping_dimmed);
           moods[i] = 0;
@@ -311,7 +305,6 @@ void calcTargetColor()
 }
 
 /// LED Methods –––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-// Reihefolge: pixels.clear() > pixels.setPixelColor(numberPixel, pixels.Color(r,g,b)) > pixels.show() > delay() falls benötigt
 
 void initLED() {
   pixels.begin();
@@ -332,36 +325,7 @@ void ledColorDisplay() {
     pixels.setPixelColor(i, blendColors[i].getValue());
   }
 
-  /*
-    if (beginQuartal > 15) { // if the whole ring should change color
-      for (int i=0; i<NUMPIXELS; i++) {
-        const Color result = baseColors[i].mix(blendColors[i], randomPhase);
-        pixels.setPixelColor(i, result.getValue());
-      }
-    } else { // if one sensor is touched, 3 LEDs should have a different color
-    for (int i=0; i<NUMPIXELS; i++) {
-      Color result;
-      if (i >= beginQuartal && i <= endQuartal) {
-        result = color_singleArm.mix(blendColors[i], randomPhase);
-      } else {
-        result = baseColors[i].mix(blendColors[i], randomPhase);
-      }
-      pixels.setPixelColor(i, result.getValue());
-    }
-    }
-  */
   pixels.show();
-
-  //delay(50);
-  /*
-    const uint8_t oldPhase = randomPhase;
-    randomPhase += randomSpeed;
-    if (oldPhase > randomPhase) {
-    for (uint8_t i = 0; i < NUMPIXELS; i++) {
-      baseColors[i] = blendColors [i];
-    }
-    generateNewRandomBlend();
-    }*/
 }
 
 uint8_t getSimpleRandom()
