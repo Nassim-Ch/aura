@@ -4,7 +4,7 @@ const int relay_Pin_IN_4 = 0, relay_Pin_IN_3 = 1, relay_Pin_IN_2 = 2, relay_Pin_
 const int max_cooldowntime = 120;
 int cooldowntime[4] = {max_cooldowntime, max_cooldowntime, max_cooldowntime, max_cooldowntime};
 int activePumpTime[4] = {0, 0, 0, 0};
-const int max_activePumpTime = 30;
+const int max_activePumpTime = 35;
 bool pumpActive[4] = {false, false, false, false};
 
 /// Inputs TouchSensor
@@ -50,7 +50,7 @@ uint8_t randomPhase = 0;
 uint8_t randomSpeed = 0;
 
 // --- Behaviour value
-const int aggressiveValue = 1000;
+const int aggressiveValue = 5000;
 const int min_curiousValue = 300, max_curiousValue = aggressiveValue;
 
 int test = 0;
